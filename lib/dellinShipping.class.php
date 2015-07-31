@@ -3,66 +3,15 @@
 class dellinShipping extends waShipping {
 
     protected $dellin;
+    protected $cities = array();
 
     protected function initControls() {
 
         parent::initControls();
     }
 
-    protected function install() {
-
-        $file_db = $this->path . '/lib/config/db.php';
-        if (file_exists($file_db)) {
-            $schema = include($file_db);
-            $model = new waModel();
-            $model->createSchema($schema);
-        }
-        // check install.php
-        $file = $this->path . '/lib/config/install.php';
-        if (file_exists($file)) {
-            $app_id = $this->app_id;
-            include($file);
-            // clear db scheme cache, see waModel::getMetadata
-            try {
-                // remove files
-                $path = waConfig::get('wa_path_cache') . '/db/';
-                waFiles::delete($path, true);
-            } catch (waException $e) {
-                waLog::log($e->__toString());
-            }
-            // clear runtime cache
-            waRuntimeCache::clearAll();
-        }
-    }
-
-    protected function prepareData($data) {
-        $result = '';
-        $filename = $this->path . '/config.php';
-        $f = fopen($filename, 'w+');
-        fwrite($f, "array(\r\n");
-        foreach ($data as $key => $item) {
-            fwrite($f, "\t'" . $item['city'] . "' => array('code' => '" . $item['code'] . "'),\r\n");
-        }
-        fwrite($f, ");\r\n");
-        fclose($f);
-    }
-
     protected function init() {
-        $autoload = waAutoload::getInstance();
-        $autoload->add('dellinPluginModel', "wa-plugins/shipping/dellin/lib/models/dellinPlugin.model.php");
-
-        try {
-            $model = new waModel();
-            $model->query("SELECT * FROM `dellinplugin` WHERE 0");
-        } catch (waDbException $e) {
-            $this->install();
-        }
-
-        $model = new dellinPluginModel();
-        $data = $model->getAll();
-        $this->prepareData($data);
-
-
+        $this->cities = include($this->path . '/lib/config/data/cities.php');
         parent::init();
     }
 
@@ -112,6 +61,13 @@ class dellinShipping extends waShipping {
         }
     }
 
+    protected function mb_ucfirst($str, $encoding = 'UTF-8') {
+        $str = mb_ereg_replace('^[\ ]+', '', $str);
+        $str = mb_strtoupper(mb_substr($str, 0, 1, $encoding), $encoding) .
+                mb_substr($str, 1, mb_strlen($str), $encoding);
+        return $str;
+    }
+
     public function calculate() {
 
         if (empty($this->appKey)) {
@@ -119,16 +75,17 @@ class dellinShipping extends waShipping {
         }
 
         $weight = $this->getTotalWeight();
-        $model = new dellinPluginModel();
-        $derivalPoint = $model->getByField('city', $this->derivalPoint);
 
-        if (empty($derivalPoint['code'])) {
+        $derival_city = $this->mb_ucfirst(trim($this->derivalPoint));
+        if (empty($this->cities[$derival_city])) {
             return 'Неверный город отправки груза';
         }
+        $derivalPoint = $this->cities[$derival_city];
 
 
         $address = $this->getAddress();
-        $arrivalPoint = $model->getByField('city', $address['city']);
+        $address_city = $this->mb_ucfirst(trim($address['city']));
+        $arrivalPoint = $this->cities[$address_city];
 
         if (empty($arrivalPoint['code'])) {
             return 'Неверный город получения груза';
